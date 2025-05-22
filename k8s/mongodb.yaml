@@ -3,9 +3,13 @@ kind: PersistentVolumeClaim
 metadata:
   name: mongodb-pvc
   namespace: ecommerce
+  labels:
+    app: mongodb
+    environment: production
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: standard
   resources:
     requests:
       storage: 10Gi
@@ -15,6 +19,9 @@ kind: Deployment
 metadata:
   name: mongodb
   namespace: ecommerce
+  labels:
+    app: mongodb
+    environment: production
 spec:
   replicas: 1
   selector:
@@ -24,12 +31,18 @@ spec:
     metadata:
       labels:
         app: mongodb
+        environment: production
     spec:
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsGroup: 999
       containers:
       - name: mongodb
-        image: mongo:latest
+        image: mongo:6.0
         ports:
         - containerPort: 27017
+          name: mongodb
         env:
         - name: MONGO_INITDB_ROOT_USERNAME
           valueFrom:
@@ -41,6 +54,31 @@ spec:
             secretKeyRef:
               name: mongodb-secret
               key: password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          exec:
+            command:
+            - mongo
+            - --eval
+            - db.adminCommand('ping')
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - mongo
+            - --eval
+            - db.adminCommand('ping')
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
         volumeMounts:
         - name: mongodb-data
           mountPath: /data/db
@@ -54,10 +92,16 @@ kind: Service
 metadata:
   name: mongodb
   namespace: ecommerce
+  labels:
+    app: mongodb
+    environment: production
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
 spec:
   selector:
     app: mongodb
   ports:
   - port: 27017
     targetPort: 27017
+    name: mongodb
   type: ClusterIP 
